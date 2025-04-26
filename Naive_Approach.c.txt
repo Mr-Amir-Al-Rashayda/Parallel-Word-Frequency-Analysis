@@ -1,0 +1,214 @@
+
+//  gcc -o Naive_Approach Naive_Approach.c -Wall
+//  ./Naive_Approach
+
+// Include necessary header files
+#include <stdio.h>  // For input/output operations
+#include <stdlib.h> // For memory allocation functions
+#include <string.h> // For string manipulation functions
+#include <time.h>   // For time tracking functionality
+#include <unistd.h> // For POSIX operating system API
+
+// Define constants
+#define MAX_WORD_LENGTH 100        // Maximum length of a single word
+#define INITIAL_ARRAY_SIZE 1000000 // Initial size of the array (1M slots)
+#define PROGRESS_INTERVAL 60       // Progress check interval in seconds
+
+// Define structure to store word and its frequency
+typedef struct
+{
+    char *word;    // Pointer to store the word string
+    int frequency; // Integer to store word frequency
+} WordFreq;
+
+// Function to print progress statistics
+void print_progress(long total_words, int unique_words, time_t start_time)
+{
+    time_t current_time = time(NULL);                    // Get current time
+    double elapsed = difftime(current_time, start_time); // Calculate elapsed time
+    printf("Progress: Processed %ld words, %d unique words found (%.2f minutes elapsed)\n",
+           total_words, unique_words, elapsed / 60.0); // Print progress stats
+    fflush(stdout);                                    // Force output buffer to be written to console
+}
+
+// Helper function to swap two WordFreq elements
+void swap(WordFreq *a, WordFreq *b)
+{
+    WordFreq temp = *a; // Store first element in temporary variable
+    *a = *b;            // Copy second element to first position
+    *b = temp;          // Copy temporary variable to second position
+}
+
+// Heapify function to maintain max heap property
+void heapify(WordFreq arr[], int n, int i)
+{
+    int largest = i;       // Initialize largest as root
+    int left = 2 * i + 1;  // Left child index
+    int right = 2 * i + 2; // Right child index
+
+    // If left child is larger than root
+    if (left < n && arr[left].frequency > arr[largest].frequency)
+        largest = left;
+
+    // If right child is larger than largest so far
+    if (right < n && arr[right].frequency > arr[largest].frequency)
+        largest = right;
+
+    // If largest is not root
+    if (largest != i)
+    {
+        swap(&arr[i], &arr[largest]); // Swap root with largest
+        heapify(arr, n, largest);     // Recursively heapify affected sub-tree
+    }
+}
+
+// Function to perform heap sort
+void heap_sort(WordFreq arr[], int n)
+{
+    // Build max heap
+    for (int i = n / 2 - 1; i >= 0; i--)
+        heapify(arr, n, i);
+
+    // Extract elements from heap one by one
+    for (int i = n - 1; i > 0; i--)
+    {
+        swap(&arr[0], &arr[i]); // Move current root to end
+        heapify(arr, i, 0);     // Call heapify on reduced heap
+    }
+}
+
+// Function to find existing word or add new word to array
+int find_or_add_word(WordFreq *words, int *size, const char *word)
+{
+    // Search for word in existing array
+    for (int i = 0; i < *size; i++)
+    {
+        if (strcmp(words[i].word, word) == 0)
+        {                         // If word found
+            words[i].frequency++; // Increment frequency
+            return i;             // Return index
+        }
+    }
+
+    // Word not found, add it to array
+    words[*size].word = strdup(word); // Duplicate word string
+    if (words[*size].word == NULL)
+    { // Check if memory allocation failed
+        perror("Memory allocation failed for word");
+        exit(1);
+    }
+    words[*size].frequency = 1; // Initialize frequency to 1
+    (*size)++;                  // Increment array size
+    return *size - 1;           // Return new word's index
+}
+
+// Main function to process input file
+WordFreq *process_file(const char *filename, int *unique_words)
+{
+    // Open file for reading
+    FILE *file = fopen(filename, "r");
+    if (!file)
+    {
+        perror("Error opening file");
+        exit(1);
+    }
+
+    // Allocate initial array memory
+    WordFreq *words = malloc(INITIAL_ARRAY_SIZE * sizeof(WordFreq));
+    if (!words)
+    {
+        perror("Memory allocation failed");
+        fclose(file);
+        exit(1);
+    }
+
+    // Initialize variables
+    char word[MAX_WORD_LENGTH];          // Buffer for reading words
+    int array_size = INITIAL_ARRAY_SIZE; // Current array size
+    *unique_words = 0;                   // Counter for unique words
+    long total_words = 0;                // Counter for total words
+    time_t start_time = time(NULL);      // Record start time
+    time_t last_progress = start_time;   // Time of last progress update
+
+    // Read words from file one by one
+    while (fscanf(file, "%99s", word) == 1)
+    {
+        total_words++; // Increment total word counter
+
+        // Check if array needs to be expanded
+        if (*unique_words >= array_size)
+        {
+            array_size *= 2; // Double array size
+            WordFreq *temp = realloc(words, array_size * sizeof(WordFreq));
+            if (!temp)
+            { // Check if reallocation failed
+                perror("Memory reallocation failed");
+                // Clean up allocated memory
+                for (int i = 0; i < *unique_words; i++)
+                {
+                    free(words[i].word);
+                }
+                free(words);
+                fclose(file);
+                exit(1);
+            }
+            words = temp; // Update pointer to new array
+        }
+
+        // Process current word
+        find_or_add_word(words, unique_words, word);
+
+        // Check if it's time to print progress
+        time_t current = time(NULL);
+        if (difftime(current, last_progress) >= PROGRESS_INTERVAL)
+        {
+            print_progress(total_words, *unique_words, start_time);
+            last_progress = current;
+        }
+    }
+
+    fclose(file); // Close input file
+    printf("\nFile reading completed. Total words: %ld, Unique words: %d\n",
+           total_words, *unique_words);
+    return words; // Return processed array
+}
+
+// Main program entry point
+int main()
+{
+    int unique_words = 0;            // Counter for unique words
+    time_t total_start = time(NULL); // Record program start time
+
+    printf("Starting word frequency analysis...\n");
+
+    // Process input file
+    WordFreq *words = process_file("text8.txt", &unique_words);
+
+    // Sort words by frequency
+    printf("\nSorting words by frequency...\n");
+    heap_sort(words, unique_words);
+
+    // Print top 10 most frequent words
+    printf("\nTop 10 most frequent words:\n");
+    printf("%-20s %s\n", "Word", "Frequency");
+    printf("----------------------------------------\n");
+    for (int i = unique_words - 1; i >= unique_words - 10 && i >= 0; i--)
+    {
+        printf("%-20s %d\n", words[i].word, words[i].frequency);
+    }
+
+    // Calculate and print total execution time
+    time_t total_end = time(NULL);
+    double total_time = difftime(total_end, total_start);
+    printf("\nTotal execution time: %.2f seconds\n", total_time);
+
+    // Free allocated memory
+    for (int i = 0; i < unique_words; i++)
+    {
+        free(words[i].word); // Free each word string
+    }
+    free(words); // Free the array itself
+
+    return 0; // End program
+}
+
